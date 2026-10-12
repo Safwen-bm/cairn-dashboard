@@ -1,31 +1,33 @@
-# My Dashboard
+# Cairn
 
-A dashboard built with Next.js, Tailwind CSS, and Recharts.
+A calm Kanban board that lives in your browser. Stack your tasks, drag them across, finish them.
 
-![Dashboard preview](./public/my-dashboard.png)
+## Features
 
-## Tech Stack
+- Three columns: To do, In progress, Done
+- Add, edit, view and delete tasks with priority and due date
+- Drag and drop between columns and reorder inside them (@dnd-kit), mouse, touch and keyboard
+- Everything saved in localStorage, no backend, no account
+- Search by title, filter by status and priority, overdue filter
+- Live stats: total, completed, overdue, due today
+- Light and dark themes, responsive layout
 
-- [Next.js](https://nextjs.org) 15
-- React 19
-- Tailwind CSS
-- Recharts
-- Radix UI
+## Shortcuts
 
-## Getting Started
+| Key | Action |
+| --- | --- |
+| `N` | New task |
+| `/` or `Ctrl+K` | Focus search |
+| `Space` on a focused card | Pick up / drop with the keyboard |
+| `Enter` on a focused card | Open details |
 
-Install dependencies and run the dev server:
+## Stack
+
+Next.js 15, React 19, TypeScript, Tailwind CSS 3, @dnd-kit, lucide-react
+
+## Run it
 
 ```bash
 npm install
 npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) to view it.
-
-## Build
-
-```bash
-npm run build
-npm start
 ```
