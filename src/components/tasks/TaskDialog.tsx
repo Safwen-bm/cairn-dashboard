@@ -1,29 +1,45 @@
 import { Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { LabelPicker } from "@/components/labels/LabelPicker";
 import { Modal } from "@/components/ui/Modal";
 import { Segmented } from "@/components/ui/Segmented";
 import { StatusMark } from "@/components/ui/StatusMark";
 import { cn } from "@/lib/cn";
 import { PRIORITIES, PRIORITY_META, STATUSES, STATUS_META } from "@/lib/constants";
 import { addDays } from "@/lib/dates";
-import type { Priority, Status, Task, TaskInput } from "@/lib/types";
+import type { Label, LabelColor, Priority, Status, Subtask, Task, TaskInput } from "@/lib/types";
+import { SubtaskEditor } from "./SubtaskEditor";
 
 interface TaskDialogProps {
   mode: "create" | "edit";
   task?: Task;
   status: Status;
   today: string;
+  labels: Label[];
+  onCreateLabel: (name: string, color: LabelColor) => Label;
   onSave: (input: TaskInput, status: Status) => void;
   onDelete?: () => void;
   onClose: () => void;
 }
 
-export function TaskDialog({ mode, task, status, today, onSave, onDelete, onClose }: TaskDialogProps) {
+export function TaskDialog({
+  mode,
+  task,
+  status,
+  today,
+  labels,
+  onCreateLabel,
+  onSave,
+  onDelete,
+  onClose,
+}: TaskDialogProps) {
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
   const [priority, setPriority] = useState<Priority>(task?.priority ?? "medium");
   const [dueDate, setDueDate] = useState(task?.dueDate ?? "");
   const [column, setColumn] = useState<Status>(status);
+  const [labelIds, setLabelIds] = useState<string[]>(task?.labelIds ?? []);
+  const [subtasks, setSubtasks] = useState<Subtask[]>(task?.subtasks ?? []);
   const [error, setError] = useState("");
 
   const submit = (e: FormEvent) => {
@@ -33,7 +49,19 @@ export function TaskDialog({ mode, task, status, today, onSave, onDelete, onClos
       setError("Give the task a title first.");
       return;
     }
-    onSave({ title: clean, description: description.trim(), priority, dueDate: dueDate || null }, column);
+    onSave(
+      {
+        title: clean,
+        description: description.trim(),
+        priority,
+        dueDate: dueDate || null,
+        labelIds,
+        subtasks: subtasks
+          .map((s) => ({ ...s, title: s.title.trim() }))
+          .filter((s) => s.title !== ""),
+      },
+      column,
+    );
   };
 
   return (
@@ -128,6 +156,10 @@ export function TaskDialog({ mode, task, status, today, onSave, onDelete, onClos
             {dueDate && <QuickDate label="Clear" onClick={() => setDueDate("")} />}
           </div>
         </div>
+
+        <LabelPicker labels={labels} selected={labelIds} onChange={setLabelIds} onCreate={onCreateLabel} />
+
+        <SubtaskEditor subtasks={subtasks} onChange={setSubtasks} />
 
         <div className="flex items-center gap-2 border-t border-line pt-4">
           {mode === "edit" && onDelete && (

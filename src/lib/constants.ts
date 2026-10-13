@@ -1,4 +1,4 @@
-import type { Priority, Status } from "./types";
+import type { LabelColor, Priority, Status } from "./types";
 
 export const USER_NAME = "Safwen";
 
@@ -31,3 +31,17 @@ export const PRIORITY_META: Record<
   medium: { label: "Medium", dot: "bg-ochre", chip: "bg-ochre/10 text-ochre", bar: "bg-ochre" },
   high: { label: "High", dot: "bg-berry", chip: "bg-berry/10 text-berry", bar: "bg-berry" },
 };
+
+export const LABEL_COLORS: readonly LabelColor[] = ["clay", "moss", "tide", "berry", "ochre", "stone"];
+
+export const LABEL_COLOR_META: Record<LabelColor, { name: string; dot: string; chip: string }> = {
+  clay: { name: "Clay", dot: "bg-accent", chip: "bg-accent/10 text-accent" },
+  moss: { name: "Moss", dot: "bg-moss", chip: "bg-moss/10 text-moss" },
+  tide: { name: "Tide", dot: "bg-tide", chip: "bg-tide/10 text-tide" },
+  berry: { name: "Berry", dot: "bg-berry", chip: "bg-berry/10 text-berry" },
+  ochre: { name: "Ochre", dot: "bg-ochre", chip: "bg-ochre/10 text-ochre" },
+  stone: { name: "Stone", dot: "bg-soft", chip: "bg-soft/10 text-soft" },
+};
+
+export const LABEL_NAME_MAX = 24;
+export const MAX_SUBTASKS = 30;

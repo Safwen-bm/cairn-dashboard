@@ -1,25 +1,33 @@
+// src\components\AppShell.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Board } from "@/components/board/Board";
 import { FilterBar } from "@/components/board/FilterBar";
 import { StatsBar } from "@/components/board/StatsBar";
+import { LabelsDialog } from "@/components/labels/LabelsDialog";
+import { LabelsProvider } from "@/components/labels/LabelsContext";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { ConfirmDialog } from "@/components/tasks/ConfirmDialog";
+import { ImportDialog } from "@/components/tasks/ImportDialog";
 import { TaskDetails } from "@/components/tasks/TaskDetails";
 import { TaskDialog } from "@/components/tasks/TaskDialog";
 import { Toast, type ToastData } from "@/components/ui/Toast";
 import { useBoard } from "@/hooks/useBoard";
 import { useToday } from "@/hooks/useToday";
-import { USER_NAME, STATUSES } from "@/lib/constants";
+import { backupFilename, downloadText, mergeBoards, parseBackup, serializeBoard } from "@/lib/backup";
+import { STATUSES, USER_NAME } from "@/lib/constants";
 import { formatLong, greeting } from "@/lib/dates";
 import { DEFAULT_FILTERS, hasActiveFilters, matchesFilters } from "@/lib/filters";
 import { computeStats } from "@/lib/stats";
-import type { Filters, Priority, Status, TaskInput } from "@/lib/types";
+import type { BoardState, Filters, Label, Priority, Status, TaskInput } from "@/lib/types";
 
 type EditorState = { mode: "create"; status: Status } | { mode: "edit"; id: string } | null;
 type ConfirmState = { title: string; body: string; action: string; run: () => void } | null;
+type IncomingState = { board: BoardState; name: string } | null;
+
+const MAX_IMPORT_BYTES = 5_000_000;
 
 export function AppShell() {
   const board = useBoard();
@@ -29,9 +37,12 @@ export function AppShell() {
   const [editor, setEditor] = useState<EditorState>(null);
   const [viewId, setViewId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
+  const [labelsOpen, setLabelsOpen] = useState(false);
+  const [incoming, setIncoming] = useState<IncomingState>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const patchFilters = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }));
   const notify = (message: string, action?: ToastData["action"]) => setToast({ message, action });
@@ -80,6 +91,20 @@ export function AppShell() {
     for (const task of Object.values(board.tasks)) counts[task.priority] += 1;
     return counts;
   }, [board.tasks]);
+
+  const labelCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const task of Object.values(board.tasks)) {
+      for (const id of task.labelIds) counts[id] = (counts[id] ?? 0) + 1;
+    }
+    return counts;
+  }, [board.tasks]);
+
+  const labelMap = useMemo(() => {
+    const map: Record<string, Label> = {};
+    for (const label of board.labels) map[label.id] = label;
+    return map;
+  }, [board.labels]);
 
   if (!board.ready) return <BoardSkeleton />;
 
@@ -131,147 +156,246 @@ export function AppShell() {
     board.moveTask(id, statusOfId(id) === "done" ? "todo" : "done");
   };
 
+  const handleDeleteLabel = (id: string) => {
+    board.deleteLabel(id);
+    if (filters.label === id) patchFilters({ label: "all" });
+  };
+
+  const handleExport = () => {
+    setMenuOpen(false);
+    downloadText(
+      backupFilename(),
+      serializeBoard({ tasks: board.tasks, columns: board.columns, labels: board.labels }),
+    );
+    notify(`Backup downloaded (${stats.total} ${stats.total === 1 ? "task" : "tasks"}).`);
+  };
+
+  const handleFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > MAX_IMPORT_BYTES) {
+      notify("That file is too large to be a Cairn backup.");
+      return;
+    }
+    const parsed = parseBackup(await file.text());
+    if (!parsed) {
+      notify("That file is not a valid Cairn backup.");
+      return;
+    }
+    setIncoming({ board: parsed, name: file.name });
+  };
+
+  const applyImport = (mode: "replace" | "merge") => {
+    if (!incoming) return;
+    const previous: BoardState = { tasks: board.tasks, columns: board.columns, labels: board.labels };
+    const next = mode === "replace" ? incoming.board : mergeBoards(previous, incoming.board);
+    board.replaceBoard(next);
+    setFilters(DEFAULT_FILTERS);
+    setIncoming(null);
+    notify(mode === "replace" ? "Board replaced from backup." : "Backup merged into your board.", {
+      label: "Undo",
+      run: () => board.replaceBoard(previous),
+    });
+  };
+
   const now = new Date();
   const editingTask = editor?.mode === "edit" ? board.tasks[editor.id] : undefined;
   const viewTask = viewId ? board.tasks[viewId] : undefined;
   const viewStatus = viewId ? statusOfId(viewId) : undefined;
 
   return (
-    <div id="app" className="relative z-[1] flex h-dvh overflow-hidden">
-      {menuOpen && (
-        <div className="fixed inset-0 z-30 bg-ink/40 lg:hidden" onClick={() => setMenuOpen(false)} aria-hidden="true" />
-      )}
+    <LabelsProvider value={labelMap}>
+      <div id="app" className="relative z-[1] flex h-dvh overflow-hidden">
+        {menuOpen && (
+          <div className="fixed inset-0 z-30 bg-ink/40 lg:hidden" onClick={() => setMenuOpen(false)} aria-hidden="true" />
+        )}
 
-      <Sidebar
-        open={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        filters={filters}
-        counts={{
-          total: stats.total,
-          status: { todo: stats.todo, "in-progress": stats.doing, done: stats.done },
-          priority: priorityCounts,
-        }}
-        onStatus={(status) => {
-          patchFilters({ status });
-          setMenuOpen(false);
-        }}
-        onPriority={(priority: Priority | "all") => {
-          patchFilters({ priority });
-          setMenuOpen(false);
-        }}
-        onNew={() => openCreate()}
-        onClearDone={() =>
-          setConfirm({
-            title: "Clear completed tasks?",
-            body: `${stats.done} finished ${stats.done === 1 ? "task" : "tasks"} will be removed for good.`,
-            action: "Clear them",
-            run: board.clearDone,
-          })
-        }
-        onLoadSamples={() =>
-          setConfirm({
-            title: "Load sample tasks?",
-            body: "This replaces every task on the board with the sample set.",
-            action: "Replace board",
-            run: board.loadSamples,
-          })
-        }
-        onDeleteAll={() =>
-          setConfirm({
-            title: "Delete everything?",
-            body: "Every task will be removed and the board will start empty. This cannot be undone.",
-            action: "Delete all",
-            run: board.clearAll,
-          })
-        }
-      />
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Header
-          greeting={`${greeting(now.getHours())}, ${USER_NAME}`}
-          subtitle={`${formatLong(today)}. ${
-            stats.dueToday === 0 ? "Nothing due today." : `${stats.dueToday} due today.`
-          }`}
-          query={filters.query}
-          onQuery={(query) => patchFilters({ query })}
-          searchRef={searchRef}
-          onNew={() => openCreate()}
-          onMenu={() => setMenuOpen(true)}
-        />
-
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-[1400px] space-y-5 px-4 pb-12 pt-5 md:px-8">
-            <StatsBar
-              stats={stats}
-              overdueActive={filters.overdueOnly}
-              onToggleOverdue={() => patchFilters({ overdueOnly: !filters.overdueOnly })}
-            />
-
-            <FilterBar
-              filters={filters}
-              shown={visibleCount}
-              total={stats.total}
-              onChange={patchFilters}
-              onClear={() => setFilters(DEFAULT_FILTERS)}
-            />
-
-            <Board
-              columns={board.columns}
-              tasks={board.tasks}
-              statuses={shown}
-              filters={filters}
-              filtered={filtered}
-              today={today}
-              onColumnsChange={board.setColumns}
-              onAdd={openCreate}
-              onOpen={setViewId}
-              onEdit={(id) => setEditor({ mode: "edit", id })}
-              onDelete={handleDelete}
-              onToggle={toggleDone}
-            />
-          </div>
-        </main>
-      </div>
-
-      {editor && (editor.mode === "create" || editingTask) && (
-        <TaskDialog
-          mode={editor.mode}
-          task={editingTask}
-          status={editor.mode === "create" ? editor.status : (statusOfId(editor.id) ?? "todo")}
-          today={today}
-          onSave={handleSave}
-          onDelete={editor.mode === "edit" ? () => handleDelete(editor.id) : undefined}
-          onClose={() => setEditor(null)}
-        />
-      )}
-
-      {viewTask && viewStatus && (
-        <TaskDetails
-          task={viewTask}
-          status={viewStatus}
-          today={today}
-          onClose={() => setViewId(null)}
-          onEdit={() => {
-            setEditor({ mode: "edit", id: viewTask.id });
-            setViewId(null);
+        <Sidebar
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          filters={filters}
+          counts={{
+            total: stats.total,
+            status: { todo: stats.todo, "in-progress": stats.doing, done: stats.done },
+            priority: priorityCounts,
+            label: labelCounts,
           }}
-          onDelete={() => handleDelete(viewTask.id)}
-          onMove={(status) => board.moveTask(viewTask.id, status)}
+          labels={board.labels}
+          onStatus={(status) => {
+            patchFilters({ status });
+            setMenuOpen(false);
+          }}
+          onPriority={(priority) => {
+            patchFilters({ priority });
+            setMenuOpen(false);
+          }}
+          onLabel={(id) => {
+            patchFilters({ label: filters.label === id ? "all" : id });
+            setMenuOpen(false);
+          }}
+          onManageLabels={() => {
+            setMenuOpen(false);
+            setLabelsOpen(true);
+          }}
+          onNew={() => openCreate()}
+          onExport={handleExport}
+          onImport={() => {
+            setMenuOpen(false);
+            fileRef.current?.click();
+          }}
+          onClearDone={() =>
+            setConfirm({
+              title: "Clear completed tasks?",
+              body: `${stats.done} finished ${stats.done === 1 ? "task" : "tasks"} will be removed for good.`,
+              action: "Clear them",
+              run: board.clearDone,
+            })
+          }
+          onLoadSamples={() =>
+            setConfirm({
+              title: "Load sample tasks?",
+              body: "This replaces every task and label on the board with the sample set.",
+              action: "Replace board",
+              run: board.loadSamples,
+            })
+          }
+          onDeleteAll={() =>
+            setConfirm({
+              title: "Delete everything?",
+              body: "Every task and label will be removed and the board will start empty. This cannot be undone.",
+              action: "Delete all",
+              run: () => {
+                board.clearAll();
+                setFilters(DEFAULT_FILTERS);
+              },
+            })
+          }
         />
-      )}
 
-      {confirm && (
-        <ConfirmDialog
-          title={confirm.title}
-          body={confirm.body}
-          action={confirm.action}
-          onConfirm={confirm.run}
-          onClose={() => setConfirm(null)}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Header
+            greeting={`${greeting(now.getHours())}, ${USER_NAME}`}
+            subtitle={`${formatLong(today)}. ${
+              stats.dueToday === 0 ? "Nothing due today." : `${stats.dueToday} due today.`
+            }`}
+            query={filters.query}
+            onQuery={(query) => patchFilters({ query })}
+            searchRef={searchRef}
+            onNew={() => openCreate()}
+            onMenu={() => setMenuOpen(true)}
+          />
+
+          <main className="flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-[1400px] space-y-5 px-4 pb-12 pt-5 md:px-8">
+              <StatsBar
+                stats={stats}
+                overdueActive={filters.overdueOnly}
+                onToggleOverdue={() => patchFilters({ overdueOnly: !filters.overdueOnly })}
+              />
+
+              <FilterBar
+                filters={filters}
+                shown={visibleCount}
+                total={stats.total}
+                onChange={patchFilters}
+                onClear={() => setFilters(DEFAULT_FILTERS)}
+              />
+
+              <Board
+                columns={board.columns}
+                tasks={board.tasks}
+                statuses={shown}
+                filters={filters}
+                filtered={filtered}
+                today={today}
+                onColumnsChange={board.setColumns}
+                onAdd={openCreate}
+                onOpen={setViewId}
+                onEdit={(id) => setEditor({ mode: "edit", id })}
+                onDelete={handleDelete}
+                onToggle={toggleDone}
+              />
+            </div>
+          </main>
+        </div>
+
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".json,application/json"
+          onChange={handleFile}
+          className="hidden"
+          aria-hidden="true"
+          tabIndex={-1}
         />
-      )}
 
-      {toast && <Toast {...toast} onDismiss={() => setToast(null)} />}
-    </div>
+        {editor && (editor.mode === "create" || editingTask) && (
+          <TaskDialog
+            mode={editor.mode}
+            task={editingTask}
+            status={editor.mode === "create" ? editor.status : (statusOfId(editor.id) ?? "todo")}
+            today={today}
+            labels={board.labels}
+            onCreateLabel={board.addLabel}
+            onSave={handleSave}
+            onDelete={editor.mode === "edit" ? () => handleDelete(editor.id) : undefined}
+            onClose={() => setEditor(null)}
+          />
+        )}
+
+        {viewTask && viewStatus && (
+          <TaskDetails
+            task={viewTask}
+            status={viewStatus}
+            today={today}
+            onClose={() => setViewId(null)}
+            onEdit={() => {
+              setEditor({ mode: "edit", id: viewTask.id });
+              setViewId(null);
+            }}
+            onDelete={() => handleDelete(viewTask.id)}
+            onMove={(status) => board.moveTask(viewTask.id, status)}
+            onToggleSubtask={(subtaskId) => board.toggleSubtask(viewTask.id, subtaskId)}
+          />
+        )}
+
+        {labelsOpen && (
+          <LabelsDialog
+            labels={board.labels}
+            counts={labelCounts}
+            onAdd={(name, color) => {
+              board.addLabel(name, color);
+            }}
+            onUpdate={board.updateLabel}
+            onDelete={handleDeleteLabel}
+            onClose={() => setLabelsOpen(false)}
+          />
+        )}
+
+        {incoming && (
+          <ImportDialog
+            board={incoming.board}
+            fileName={incoming.name}
+            onMerge={() => applyImport("merge")}
+            onReplace={() => applyImport("replace")}
+            onClose={() => setIncoming(null)}
+          />
+        )}
+
+        {confirm && (
+          <ConfirmDialog
+            title={confirm.title}
+            body={confirm.body}
+            action={confirm.action}
+            onConfirm={confirm.run}
+            onClose={() => setConfirm(null)}
+          />
+        )}
+
+        {toast && <Toast {...toast} onDismiss={() => setToast(null)} />}
+      </div>
+    </LabelsProvider>
   );
 }
 

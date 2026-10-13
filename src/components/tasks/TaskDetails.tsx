@@ -1,5 +1,7 @@
 import { Pencil, Trash2, X } from "lucide-react";
 import type { ReactNode } from "react";
+import { LabelChip } from "@/components/labels/LabelChip";
+import { useLabelMap } from "@/components/labels/LabelsContext";
 import { Modal } from "@/components/ui/Modal";
 import { PriorityBadge } from "@/components/ui/PriorityBadge";
 import { Segmented } from "@/components/ui/Segmented";
@@ -7,7 +9,8 @@ import { StatusMark } from "@/components/ui/StatusMark";
 import { cn } from "@/lib/cn";
 import { STATUSES, STATUS_META } from "@/lib/constants";
 import { dueInfo, formatLong, formatStamp, isOverdue } from "@/lib/dates";
-import type { Status, Task } from "@/lib/types";
+import type { Label, Status, Task } from "@/lib/types";
+import { SubtaskCheck } from "./SubtaskCheck";
 
 interface TaskDetailsProps {
   task: Task;
@@ -17,11 +20,27 @@ interface TaskDetailsProps {
   onEdit: () => void;
   onDelete: () => void;
   onMove: (status: Status) => void;
+  onToggleSubtask: (subtaskId: string) => void;
 }
 
-export function TaskDetails({ task, status, today, onClose, onEdit, onDelete, onMove }: TaskDetailsProps) {
+export function TaskDetails({
+  task,
+  status,
+  today,
+  onClose,
+  onEdit,
+  onDelete,
+  onMove,
+  onToggleSubtask,
+}: TaskDetailsProps) {
+  const labelMap = useLabelMap();
+  const labels = task.labelIds.map((id) => labelMap[id]).filter((l): l is Label => Boolean(l));
   const due = task.dueDate ? dueInfo(task.dueDate, today) : null;
   const late = isOverdue(task, today);
+
+  const totalSubs = task.subtasks.length;
+  const doneSubs = task.subtasks.filter((s) => s.done).length;
+  const allSubsDone = totalSubs > 0 && doneSubs === totalSubs;
 
   return (
     <Modal onClose={onClose} labelledBy="task-details-title">
@@ -51,10 +70,58 @@ export function TaskDetails({ task, status, today, onClose, onEdit, onDelete, on
           {task.title}
         </h2>
 
+        {labels.length > 0 && (
+          <div className="-mt-2 flex flex-wrap gap-1.5">
+            {labels.map((label) => (
+              <LabelChip key={label.id} label={label} className="text-xs" />
+            ))}
+          </div>
+        )}
+
         {task.description ? (
           <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-soft">{task.description}</p>
         ) : (
           <p className="text-sm italic text-faint">No notes on this one.</p>
+        )}
+
+        {totalSubs > 0 && (
+          <div>
+            <div className="mb-2 flex items-center justify-between text-xs">
+              <span className="font-medium text-soft">Subtasks</span>
+              <span className="font-mono text-faint">
+                {doneSubs}/{totalSubs}
+              </span>
+            </div>
+            <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-sunken">
+              <div
+                className="h-full bg-moss transition-all duration-300"
+                style={{ width: `${(doneSubs / totalSubs) * 100}%` }}
+              />
+            </div>
+            <ul className="space-y-0.5">
+              {task.subtasks.map((subtask) => (
+                <li key={subtask.id}>
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={subtask.done}
+                    onClick={() => onToggleSubtask(subtask.id)}
+                    className="flex w-full items-start gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm transition hover:bg-sunken"
+                  >
+                    <SubtaskCheck checked={subtask.done} className="mt-0.5" />
+                    <span className={cn("min-w-0 break-words", subtask.done && "text-faint line-through")}>
+                      {subtask.title}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {allSubsDone && status !== "done" && (
+              <button type="button" onClick={() => onMove("done")} className="btn btn-soft mt-3 w-full text-moss">
+                All subtasks done. Move to Done
+              </button>
+            )}
+          </div>
         )}
 
         <dl className="grid grid-cols-2 gap-4 rounded-xl bg-sunken p-4 text-sm">

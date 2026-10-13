@@ -1,19 +1,29 @@
-import { Eraser, HardDrive, Layers, Plus, RotateCcw, Trash2, X } from "lucide-react";
+import { Download, Eraser, HardDrive, Layers, Plus, RotateCcw, Tags, Trash2, Upload, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Logo } from "@/components/ui/Logo";
 import { StatusMark } from "@/components/ui/StatusMark";
 import { cn } from "@/lib/cn";
-import { PRIORITIES, PRIORITY_META, STATUSES, STATUS_META } from "@/lib/constants";
-import type { Filters, Priority, Status } from "@/lib/types";
+import { LABEL_COLOR_META, PRIORITIES, PRIORITY_META, STATUSES, STATUS_META } from "@/lib/constants";
+import type { Filters, Label, Priority, Status } from "@/lib/types";
 
 interface SidebarProps {
   open: boolean;
   onClose: () => void;
   filters: Filters;
-  counts: { total: number; status: Record<Status, number>; priority: Record<Priority, number> };
+  counts: {
+    total: number;
+    status: Record<Status, number>;
+    priority: Record<Priority, number>;
+    label: Record<string, number>;
+  };
+  labels: Label[];
   onStatus: (status: Status | "all") => void;
   onPriority: (priority: Priority | "all") => void;
+  onLabel: (id: string) => void;
+  onManageLabels: () => void;
   onNew: () => void;
+  onExport: () => void;
+  onImport: () => void;
   onClearDone: () => void;
   onLoadSamples: () => void;
   onDeleteAll: () => void;
@@ -24,9 +34,14 @@ export function Sidebar({
   onClose,
   filters,
   counts,
+  labels,
   onStatus,
   onPriority,
+  onLabel,
+  onManageLabels,
   onNew,
+  onExport,
+  onImport,
   onClearDone,
   onLoadSamples,
   onDeleteAll,
@@ -63,71 +78,110 @@ export function Sidebar({
         <span className="font-mono text-xs opacity-80">N</span>
       </button>
 
-      <nav className="mt-7 flex-1 space-y-7 overflow-y-auto" aria-label="Filters">
-        <Section title="Board">
-          <NavItem
-            active={filters.status === "all"}
-            onClick={() => onStatus("all")}
-            icon={<Layers size={16} />}
-            label="All tasks"
-            count={counts.total}
-          />
-          {STATUSES.map((status) => (
+      <div className="-mr-2 mt-7 flex-1 space-y-7 overflow-y-auto pb-2 pr-2">
+        <nav aria-label="Filters" className="space-y-7">
+          <Section title="Board">
             <NavItem
-              key={status}
-              active={filters.status === status}
-              onClick={() => onStatus(status)}
-              icon={<StatusMark status={status} className={cn("h-4 w-4", STATUS_META[status].tone)} />}
-              label={STATUS_META[status].label}
-              count={counts.status[status]}
+              active={filters.status === "all"}
+              onClick={() => onStatus("all")}
+              icon={<Layers size={16} />}
+              label="All tasks"
+              count={counts.total}
             />
-          ))}
+            {STATUSES.map((status) => (
+              <NavItem
+                key={status}
+                active={filters.status === status}
+                onClick={() => onStatus(status)}
+                icon={<StatusMark status={status} className={cn("h-4 w-4", STATUS_META[status].tone)} />}
+                label={STATUS_META[status].label}
+                count={counts.status[status]}
+              />
+            ))}
+          </Section>
+
+          <Section title="Priority">
+            <NavItem
+              active={filters.priority === "all"}
+              onClick={() => onPriority("all")}
+              icon={<span className="h-2.5 w-2.5 rounded-full border border-faint" />}
+              label="Any priority"
+              count={counts.total}
+            />
+            {[...PRIORITIES].reverse().map((priority) => (
+              <NavItem
+                key={priority}
+                active={filters.priority === priority}
+                onClick={() => onPriority(priority)}
+                icon={<span className={cn("h-2.5 w-2.5 rounded-full", PRIORITY_META[priority].dot)} />}
+                label={PRIORITY_META[priority].label}
+                count={counts.priority[priority]}
+              />
+            ))}
+          </Section>
+
+          <Section
+            title="Labels"
+            action={
+              <button
+                type="button"
+                onClick={onManageLabels}
+                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] normal-case tracking-normal text-soft transition hover:bg-sunken hover:text-ink"
+              >
+                <Tags size={12} />
+                Manage
+              </button>
+            }
+          >
+            {labels.length === 0 ? (
+              <p className="px-3 py-1 text-[13px] text-faint">No labels yet.</p>
+            ) : (
+              labels.map((label) => (
+                <NavItem
+                  key={label.id}
+                  active={filters.label === label.id}
+                  onClick={() => onLabel(label.id)}
+                  icon={<span className={cn("h-2.5 w-2.5 rounded-full", LABEL_COLOR_META[label.color].dot)} />}
+                  label={label.name}
+                  count={counts.label[label.id] ?? 0}
+                />
+              ))
+            )}
+          </Section>
+        </nav>
+
+        <Section title="Backup">
+          <ActionButton icon={<Download size={15} />} label="Export backup" onClick={onExport} />
+          <ActionButton icon={<Upload size={15} />} label="Import backup" onClick={onImport} />
         </Section>
 
-        <Section title="Priority">
-          <NavItem
-            active={filters.priority === "all"}
-            onClick={() => onPriority("all")}
-            icon={<span className="h-2.5 w-2.5 rounded-full border border-faint" />}
-            label="Any priority"
-            count={counts.total}
+        <Section title="Tidy up">
+          <ActionButton
+            icon={<Eraser size={15} />}
+            label={`Clear done (${counts.status.done})`}
+            onClick={onClearDone}
+            disabled={counts.status.done === 0}
           />
-          {[...PRIORITIES].reverse().map((priority) => (
-            <NavItem
-              key={priority}
-              active={filters.priority === priority}
-              onClick={() => onPriority(priority)}
-              icon={<span className={cn("h-2.5 w-2.5 rounded-full", PRIORITY_META[priority].dot)} />}
-              label={PRIORITY_META[priority].label}
-              count={counts.priority[priority]}
-            />
-          ))}
+          <ActionButton icon={<RotateCcw size={15} />} label="Load sample tasks" onClick={onLoadSamples} />
+          <ActionButton icon={<Trash2 size={15} />} label="Delete everything" onClick={onDeleteAll} danger />
         </Section>
-      </nav>
-
-      <div className="mt-4 space-y-0.5 border-t border-line pt-4">
-        <p className="px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.14em] text-faint">Tidy up</p>
-        <FooterAction
-          icon={<Eraser size={15} />}
-          label={`Clear done (${counts.status.done})`}
-          onClick={onClearDone}
-          disabled={counts.status.done === 0}
-        />
-        <FooterAction icon={<RotateCcw size={15} />} label="Load sample tasks" onClick={onLoadSamples} />
-        <FooterAction icon={<Trash2 size={15} />} label="Delete everything" onClick={onDeleteAll} danger />
-        <p className="flex items-center gap-2 px-3 pt-3 text-xs text-faint">
-          <HardDrive size={13} />
-          Saved on this device only
-        </p>
       </div>
+
+      <p className="mt-3 flex items-center gap-2 border-t border-line px-3 pt-3 text-xs text-faint">
+        <HardDrive size={13} />
+        Saved on this device only
+      </p>
     </aside>
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
     <div>
-      <h2 className="mb-2 px-3 text-[11px] font-medium uppercase tracking-[0.14em] text-faint">{title}</h2>
+      <div className="mb-2 flex items-center justify-between px-3">
+        <h2 className="text-[11px] font-medium uppercase tracking-[0.14em] text-faint">{title}</h2>
+        {action}
+      </div>
       <div className="space-y-0.5">{children}</div>
     </div>
   );
@@ -158,13 +212,13 @@ function NavItem({
     >
       {active && <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-accent" />}
       <span className="flex h-4 w-4 items-center justify-center">{icon}</span>
-      <span className="flex-1">{label}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
       <span className="font-mono text-xs tabular-nums text-faint">{count}</span>
     </button>
   );
 }
 
-function FooterAction({
+function ActionButton({
   icon,
   label,
   onClick,

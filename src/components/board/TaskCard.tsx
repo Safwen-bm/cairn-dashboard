@@ -1,12 +1,16 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { CalendarDays, Pencil, Trash2 } from "lucide-react";
+import { CalendarDays, ListChecks, Pencil, Trash2 } from "lucide-react";
+import { LabelChip } from "@/components/labels/LabelChip";
+import { useLabelMap } from "@/components/labels/LabelsContext";
 import { PriorityBadge } from "@/components/ui/PriorityBadge";
 import { StatusMark } from "@/components/ui/StatusMark";
 import { cn } from "@/lib/cn";
 import { PRIORITY_META, STATUS_META } from "@/lib/constants";
 import { dueInfo, isOverdue } from "@/lib/dates";
-import type { Status, Task } from "@/lib/types";
+import type { Label, Status, Task } from "@/lib/types";
+
+const MAX_VISIBLE_LABELS = 3;
 
 interface BodyProps {
   task: Task;
@@ -20,9 +24,15 @@ interface BodyProps {
 
 /** Pure visual card. Used by the sortable wrapper and by the drag overlay. */
 export function TaskCardBody({ task, status, today, overlay, onEdit, onDelete, onToggle }: BodyProps) {
+  const labelMap = useLabelMap();
+  const labels = task.labelIds.map((id) => labelMap[id]).filter((l): l is Label => Boolean(l));
+
   const done = status === "done";
   const due = task.dueDate ? dueInfo(task.dueDate, today) : null;
   const late = isOverdue(task, today);
+
+  const totalSubs = task.subtasks.length;
+  const doneSubs = task.subtasks.filter((s) => s.done).length;
 
   const dueTone = done
     ? "bg-sunken text-faint"
@@ -72,6 +82,35 @@ export function TaskCardBody({ task, status, today, overlay, onEdit, onDelete, o
           )}
         </div>
       </div>
+
+      {(labels.length > 0 || totalSubs > 0) && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5 pl-7">
+          {labels.slice(0, MAX_VISIBLE_LABELS).map((label) => (
+            <LabelChip key={label.id} label={label} />
+          ))}
+          {labels.length > MAX_VISIBLE_LABELS && (
+            <span className="text-[11px] text-faint">+{labels.length - MAX_VISIBLE_LABELS}</span>
+          )}
+          {totalSubs > 0 && (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 text-[11px] font-medium",
+                doneSubs === totalSubs ? "text-moss" : "text-soft",
+              )}
+              title={`${doneSubs} of ${totalSubs} subtasks done`}
+            >
+              <ListChecks size={13} />
+              {doneSubs}/{totalSubs}
+              <span className="ml-0.5 h-1 w-8 overflow-hidden rounded-full bg-sunken" aria-hidden="true">
+                <span
+                  className="block h-full bg-moss"
+                  style={{ width: `${(doneSubs / totalSubs) * 100}%` }}
+                />
+              </span>
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2 pl-7">
         <PriorityBadge priority={task.priority} />

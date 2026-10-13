@@ -1,4 +1,5 @@
 import { X } from "lucide-react";
+import { useLabelMap } from "@/components/labels/LabelsContext";
 import { PRIORITY_META, STATUS_META } from "@/lib/constants";
 import { hasActiveFilters } from "@/lib/filters";
 import type { Filters } from "@/lib/types";
@@ -16,6 +17,7 @@ export function FilterBar({
   onChange: (patch: Partial<Filters>) => void;
   onClear: () => void;
 }) {
+  const labels = useLabelMap();
   if (!hasActiveFilters(filters)) return null;
 
   return (
@@ -29,6 +31,9 @@ export function FilterBar({
       )}
       {filters.priority !== "all" && (
         <Chip label={`Priority: ${PRIORITY_META[filters.priority].label}`} onRemove={() => onChange({ priority: "all" })} />
+      )}
+      {filters.label !== "all" && (
+        <Chip label={`Label: ${labels[filters.label]?.name ?? "Unknown"}`} onRemove={() => onChange({ label: "all" })} />
       )}
       {filters.overdueOnly && <Chip label="Overdue only" onRemove={() => onChange({ overdueOnly: false })} />}
       <button type="button" onClick={onClear} className="px-2 text-xs text-accent underline-offset-4 hover:underline">
